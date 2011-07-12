@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -21,20 +21,19 @@ package collection
 import org.bson.util._
 import org.bson.io.OutputBuffer
 import org.bson.types.ObjectId
-import com.twitter.util.{Future , SimplePool}
+import com.twitter.util.{ Future, SimplePool }
 import java.io.InputStream
 
 object `package` {
-    /**
-     * TODO - Replace ThreadLocal with actor pipelines?
-     * TODO - Execute around pattern
-     */
-    val defaultSerializerPool = new ThreadLocal(new SimplePool(for (i <- 0 until 10) yield new DefaultBSONSerializer)) // todo - intelligent pooling
+  /**
+   * TODO - Replace ThreadLocal with actor pipelines?
+   * TODO - Execute around pattern
+   */
+  val defaultSerializerPool = new ThreadLocal(new SimplePool(for (i <- 0 until 10) yield new DefaultBSONSerializer)) // todo - intelligent pooling
 
-    val defaultDeserializerPool = new ThreadLocal(new SimplePool(for (i <- 0 until 10) yield new DefaultBSONDeserializer)) // todo - intelligent pooling
+  val defaultDeserializerPool = new ThreadLocal(new SimplePool(for (i <- 0 until 10) yield new DefaultBSONDeserializer)) // todo - intelligent pooling
 
   trait SerializableBSONDocumentLike[T <: BSONDocument] extends SerializableBSONObject[T] with Logging {
-
 
     def encode(doc: T, out: OutputBuffer) = {
       log.trace("Reserving an encoder instance")
@@ -79,10 +78,10 @@ object `package` {
     /**
      * Checks for an ID and generates one.
      * Not all implementers will need this, but it gets invoked nonetheless
-     * as a signal to BSONDocument, etc implementations to verify an id is there 
+     * as a signal to BSONDocument, etc implementations to verify an id is there
      * and generate one if needed.
      */
-    def checkID(doc: T) : T = {
+    def checkID(doc: T): T = {
       doc.get("_id") match {
         case Some(oid: ObjectId) => {
           log.debug("Found an existing OID")
@@ -102,10 +101,10 @@ object `package` {
       }
       doc
     }
-    
+
     def _id(doc: T): Option[AnyRef] = doc.getAs[AnyRef]("_id")
 
-    def checkBooleanCommandResult(doc : T): Option[String] = {
+    def checkBooleanCommandResult(doc: T): Option[String] = {
       doc.get("ok") match {
         case Some(1.0) =>
           None
@@ -114,19 +113,19 @@ object `package` {
       }
     }
 
-    def getValueField(doc: T)(implicit mf : Manifest[T]): Option[T] = {
+    def getValueField(doc: T)(implicit mf: Manifest[T]): Option[T] = {
       try {
-          val v = doc.getAs[T]("value")
-          if (v.isEmpty)
-            None
-          else
-            v
+        val v = doc.getAs[T]("value")
+        if (v.isEmpty)
+          None
+        else
+          v
       } catch {
-        case cce : ClassCastException =>
+        case cce: ClassCastException =>
           None
       }
     }
-    
+
   }
 
   implicit object SerializableDocument extends SerializableBSONDocumentLike[Document]
@@ -134,7 +133,6 @@ object `package` {
   implicit object SerializableOrderedDocument extends SerializableBSONDocumentLike[OrderedDocument]
 
   implicit object SerializableBSONList extends SerializableBSONDocumentLike[BSONList]
-
 
 }
 

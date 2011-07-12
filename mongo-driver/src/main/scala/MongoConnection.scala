@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -31,22 +31,23 @@ import com.mongodb.async.futures._
 import org.jboss.netty.buffer._
 
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.{ConcurrentHashMap , Executors}
-import scala.collection.mutable.{ConcurrentMap , WeakHashMap}
-import com.mongodb.async.util.{ConcurrentQueue , CursorCleaningTimer}
+import java.util.concurrent.{ ConcurrentHashMap, Executors }
+import scala.collection.mutable.{ ConcurrentMap, WeakHashMap }
+import com.mongodb.async.util.{ ConcurrentQueue, CursorCleaningTimer }
 import org.bson.types.ObjectId
 import org.bson.util.Logging
+import com.mongodb.async.util._
 
 /**
-* Base trait for all connections, be it direct, replica set, etc
-*
-* This contains common code for any type of connection.
-*
-* NOTE: Connection instances are instances of a *POOL*, always.
-*
-* @author Brendan W. McAdams <brendan@10gen.com>
-* @since 0.1
-*/
+ * Base trait for all connections, be it direct, replica set, etc
+ *
+ * This contains common code for any type of connection.
+ *
+ * NOTE: Connection instances are instances of a *POOL*, always.
+ *
+ * @author Brendan W. McAdams <brendan@10gen.com>
+ * @since 0.1
+ */
 abstract class MongoConnection extends Logging {
 
   log.info("Initializing MongoConnectionHandler.")
@@ -71,7 +72,7 @@ abstract class MongoConnection extends Logging {
 
   bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
     def getPipeline = {
-      val p = Channels.pipeline(new BSONFrameDecoder(), handler) 
+      val p = Channels.pipeline(new BSONFrameDecoder(), handler)
       p
     }
   })
@@ -82,7 +83,7 @@ abstract class MongoConnection extends Logging {
   // TODO - Switch to listener based establishment
   protected implicit val channel = _f.awaitUninterruptibly.getChannel
 
-  MongoConnection.channelState.put(channel, new AtomicBoolean(false)) 
+  MongoConnection.channelState.put(channel, new AtomicBoolean(false))
 
   bootstrap.setOption("tcpNoDelay", true)
   bootstrap.setOption("keepAlive", true)
@@ -125,12 +126,11 @@ abstract class MongoConnection extends Logging {
   /**
    * WARNING: You *must* use an ordered list or commands won't work
    */
-  protected[mongodb] def runCommand[Cmd <% BSONDocument, Result : SerializableBSONObject : Manifest](ns: String, cmd: Cmd)(f: SingleDocQueryRequestFuture[Result]) {
+  protected[mongodb] def runCommand[Cmd <% BSONDocument, Result: SerializableBSONObject: Manifest](ns: String, cmd: Cmd)(f: SingleDocQueryRequestFuture[Result]) {
     val qMsg = MongoConnection.createCommand(ns, cmd)
     log.trace("Created Query Message: %s, id: %d", qMsg, qMsg.requestID)
     send(qMsg, f)
   }
-
 
   protected[mongodb] def send[Result](msg: MongoClientMessage, f: RequestFuture[Result])(implicit concern: WriteConcern = this.writeConcern) =
     MongoConnection.send(msg, f)
@@ -139,8 +139,6 @@ abstract class MongoConnection extends Logging {
    * Remember, a DB is basically a future since it doesn't have to exist.
    */
   def apply(dbName: String): DB = database(dbName)
-
-
 
   /**
    * Remember, a DB is basically a future since it doesn't have to exist.
@@ -163,29 +161,29 @@ abstract class MongoConnection extends Logging {
     }))
   }
 
-  def find[Qry <: BSONDocument, Flds <: BSONDocument, Result](db: String)(collection: String)(query: Qry = Document.empty, fields: Flds = Document.empty, numToSkip: Int = 0, batchSize: Int = 0)(callback: CursorQueryRequestFuture[Result])(implicit concern: WriteConcern = this.writeConcern, serializable : SerializableBSONObject[Result]) {
+  def find[Qry <: BSONDocument, Flds <: BSONDocument, Result](db: String)(collection: String)(query: Qry = Document.empty, fields: Flds = Document.empty, numToSkip: Int = 0, batchSize: Int = 0)(callback: CursorQueryRequestFuture[Result])(implicit concern: WriteConcern = this.writeConcern, serializable: SerializableBSONObject[Result]) {
     val qMsg = QueryMessage(db + "." + collection, numToSkip, batchSize, query, fieldSpec(fields))
     send(qMsg, callback)
   }
 
-  def findOne[Qry <: BSONDocument, Flds <: BSONDocument, Result](db: String)(collection: String)(query: Qry = Document.empty, fields: Flds = Document.empty)(callback: SingleDocQueryRequestFuture[Result])(implicit concern: WriteConcern = this.writeConcern, serializable : SerializableBSONObject[Result]) {
+  def findOne[Qry <: BSONDocument, Flds <: BSONDocument, Result](db: String)(collection: String)(query: Qry = Document.empty, fields: Flds = Document.empty)(callback: SingleDocQueryRequestFuture[Result])(implicit concern: WriteConcern = this.writeConcern, serializable: SerializableBSONObject[Result]) {
     val qMsg = QueryMessage(db + "." + collection, 0, -1, query, fieldSpec(fields))
     send(qMsg, callback)
   }
 
   // TODO - should we allow any and do boxing elsewhere?
   // TODO - FindOne is Option[] returning, ensure!
-  def findOneByID[A <: AnyRef, Flds <: BSONDocument, Result](db: String)(collection: String)(id: A, fields : Flds = Document.empty)(callback: SingleDocQueryRequestFuture[Result])(implicit serializable : SerializableBSONObject[Result]) =
+  def findOneByID[A <: AnyRef, Flds <: BSONDocument, Result](db: String)(collection: String)(id: A, fields: Flds = Document.empty)(callback: SingleDocQueryRequestFuture[Result])(implicit serializable: SerializableBSONObject[Result]) =
     findOne(db)(collection)(Document("_id" -> id), fields)(callback)
 
   // TODO - Immutable mode / support immutable objects
-  def insert[T](db: String)(collection: String)(doc: T, validate: Boolean = true)(callback: WriteRequestFuture)(implicit concern: WriteConcern = this.writeConcern, m: SerializableBSONObject[T], mf : Manifest[T]) {
+  def insert[T](db: String)(collection: String)(doc: T, validate: Boolean = true)(callback: WriteRequestFuture)(implicit concern: WriteConcern = this.writeConcern, m: SerializableBSONObject[T], mf: Manifest[T]) {
     log.trace("Inserting: %s to %s.%s with WriteConcern: %s", doc, db, collection, concern)
     val checked = if (validate) {
       m.checkObject(doc)
       m.checkID(doc)
     } else {
-      log.info("Validation of objects disabled; no ID Gen.")
+      log.debug("Validation of objects disabled; no ID Gen.")
       doc
     }
     send(InsertMessage(db + "." + collection, checked), callback)
@@ -194,13 +192,13 @@ abstract class MongoConnection extends Logging {
   /**
    * Insert multiple documents at once.
    * Keep in mind, that WriteConcern behavior may be wonky if you do a batchInsert
-   * I believe the behavior of MongoDB will cause getLastError to indicate the LAST error 
+   * I believe the behavior of MongoDB will cause getLastError to indicate the LAST error
    * on your batch ---- not the first, or all of them.
    *
    * The WriteRequest used here returns a Seq[] of every generated ID, not a single ID
    * TODO - Support turning off ID Validation
    */
-  def batchInsert[T](db: String)(collection: String)(docs: T*)(callback: WriteRequestFuture)(implicit concern: WriteConcern = this.writeConcern, m: SerializableBSONObject[T], mf : Manifest[T]) {
+  def batchInsert[T](db: String)(collection: String)(docs: T*)(callback: WriteRequestFuture)(implicit concern: WriteConcern = this.writeConcern, m: SerializableBSONObject[T], mf: Manifest[T]) {
     log.trace("Batch Inserting: %s to %s.%s with WriteConcern: %s", docs, db, collection, concern)
     val checked = docs.map(x => {
       m.checkObject(x)
@@ -209,27 +207,26 @@ abstract class MongoConnection extends Logging {
     send(InsertMessage(db + "." + collection, checked: _*), callback)
   }
 
-
   /**
    * Counts the number of documents in a given namespace
    * -1 indicates an error, for now
    */
-  def count[Qry : SerializableBSONObject, Flds : SerializableBSONObject](db: String)(collection: String)(query : Qry = Document.empty,
-    fields : Flds = Document.empty,
-    limit : Long = 0,
-    skip : Long = 0)(callback: Int => Unit) = {
-      val builder = OrderedDocument.newBuilder
-      builder += ("count" -> collection)
-      builder += ("query" -> query)
-      builder += ("fields" -> fields)
-      if (limit > 0)
-        builder += ("limit" -> limit)
-      if (skip > 0)
-        builder += ("skip" -> skip)
-      runCommand(db, builder.result)(SimpleRequestFutures.command((doc: Document) => {
-                   log.trace("Got a result from 'count' command: %s", doc)
-                   callback(doc.getAsOrElse[Double]("n", -1.0).toInt)
-                 }))
+  def count[Qry: SerializableBSONObject, Flds: SerializableBSONObject](db: String)(collection: String)(query: Qry = Document.empty,
+    fields: Flds = Document.empty,
+    limit: Long = 0,
+    skip: Long = 0)(callback: Int => Unit) = {
+    val builder = OrderedDocument.newBuilder
+    builder += ("count" -> collection)
+    builder += ("query" -> query)
+    builder += ("fields" -> fields)
+    if (limit > 0)
+      builder += ("limit" -> limit)
+    if (skip > 0)
+      builder += ("skip" -> skip)
+    runCommand(db, builder.result)(SimpleRequestFutures.command((doc: Document) => {
+      log.trace("Got a result from 'count' command: %s", doc)
+      callback(doc.getAsOrElse[Double]("n", -1.0).toInt)
+    }))
   }
 
   /**
@@ -238,8 +235,7 @@ abstract class MongoConnection extends Logging {
    * @param query
    * @return the removed document
    */
-  def findAndRemove[Qry :  SerializableBSONObject, Result : SerializableBSONObject : Manifest](db: String)(collection: String)(query: Qry = Document.empty)(callback: SingleDocQueryRequestFuture[Result]) = findAndModify(db)(collection)(query=query, remove=true, update=Option[Document](null))(callback)
- 
+  def findAndRemove[Qry: SerializableBSONObject, Result: SerializableBSONObject: Manifest](db: String)(collection: String)(query: Qry = Document.empty)(callback: FindAndModifyRequestFuture) = findAndModify(db)(collection)(query = query, remove = true, update = Option[Document](null))(callback)
 
   /**
    * Finds the first document in the query and updates it.
@@ -252,21 +248,21 @@ abstract class MongoConnection extends Logging {
    * @param upsert do upsert (insert if document not present)
    * @return the document
    */
-  def findAndModify[Qry : SerializableBSONObject, Srt : SerializableBSONObject, Upd : SerializableBSONObject, Flds : SerializableBSONObject, Result : SerializableBSONObject : Manifest](db: String)(collection: String)(
-                    query: Qry = Document.empty,
-                    sort: Srt = Document.empty,
-                    remove: Boolean = false,
-                    update: Option[Upd] = None,
-                    getNew: Boolean = false,
-                    fields: Flds = Document.empty,
-                    upsert: Boolean = false)(callback: SingleDocQueryRequestFuture[Result]) = {
+  def findAndModify[Qry: SerializableBSONObject, Srt: SerializableBSONObject, Upd: SerializableBSONObject, Flds: SerializableBSONObject, Result: SerializableBSONObject: Manifest](db: String)(collection: String)(
+    query: Qry = Document.empty,
+    sort: Srt = Document.empty,
+    remove: Boolean = false,
+    update: Option[Upd] = None,
+    getNew: Boolean = false,
+    fields: Flds = Document.empty,
+    upsert: Boolean = false)(callback: FindAndModifyRequestFuture) = {
     val cmd = OrderedDocument("findandmodify" -> collection,
-                              "query" -> query,
-                              "fields" -> fields,
-                              "sort" -> sort)
+      "query" -> query,
+      "fields" -> fields,
+      "sort" -> sort)
 
     //if (remove && (update.isEmpty || update.get.isEmpty) && !getNew)
-      //throw new IllegalArgumentException("Cannot mix update statements or getNew param with 'REMOVE' mode.")
+    //throw new IllegalArgumentException("Cannot mix update statements or getNew param with 'REMOVE' mode.")
 
     if (remove) {
       log.debug("FindAndModify 'remove' mode.")
@@ -286,17 +282,22 @@ abstract class MongoConnection extends Logging {
     }
     val m = implicitly[SerializableBSONObject[Result]]
 
-    log.debug("Running findAndModify: %s", cmd)
-    runCommand(db, cmd)(SimpleRequestFutures.command((reply: Result) => {
+    implicit val valM = callback.m
+    implicit val valDec = new SerializableFindAndModifyResult[callback.T]()(callback.decoder, valM)
+
+    runCommand(db, cmd)(SimpleRequestFutures.command((reply: FindAndModifyResult[callback.T]) => {
       log.trace("Got a result from 'findAndModify' command: %s", reply)
-      val doc = m.getValueField(reply)
+      val doc = reply.value
       if (boolCmdResult(reply, false) && !doc.isEmpty) {
         callback(doc.get.asInstanceOf[callback.T])
       } else {
-        log.warning("Command 'findAndModify' may have failed. Bad Reply: %s", reply)
-        callback(
-          new Exception("Received a bad reply from findAndModify. MAY NOT be an error (just didn't find a match?). (Reply: '%s')".format(reply))
-        )
+        callback(reply.getAs[String]("errmsg") match {
+          case Some("No matching object found") => new NoMatchingDocumentError()
+          case default => {
+            log.warning("Command 'findAndModify' may have failed. Bad Reply: %s", reply)
+            new MongoException("FindAndModifyError: %s".format(default))
+          }
+        })
       }
     }))
 
@@ -304,10 +305,10 @@ abstract class MongoConnection extends Logging {
 
   def update[Upd](db: String)(collection: String)(query: BSONDocument, update: Upd, upsert: Boolean = false, multi: Boolean = false)(callback: WriteRequestFuture)(implicit concern: WriteConcern = this.writeConcern, uM: SerializableBSONObject[Upd]) {
     /**
-    * If a field block doesn't start with a ($ - special type) we need to validate the keys
-    * Since you can't mix $set, etc with a regular "object" this filters safely.
-    TODO - Fix and uncomment!!!!
-    */
+     * If a field block doesn't start with a ($ - special type) we need to validate the keys
+     * Since you can't mix $set, etc with a regular "object" this filters safely.
+     * TODO - Fix and uncomment!!!!
+     */
     // if (update.filterKeys(k => k.startsWith("$")).isEmpty) checkObject(update)
     send(UpdateMessage(db + "." + collection, query, update, upsert, multi), callback)
   }
@@ -338,12 +339,12 @@ abstract class MongoConnection extends Logging {
 
   def createIndex[Kys <% BSONDocument, Opts <% BSONDocument](db: String)(collection: String)(keys: Kys, options: Opts = Document.empty)(callback: WriteRequestFuture) {
     implicit val idxSafe = WriteConcern.Safe
-    val b = Document.newBuilder 
+    val b = Document.newBuilder
     b += "name" -> indexName(keys)
     b += "ns" -> (db + "." + collection)
     b += "key" -> keys
     b ++= options
-    insert(db)("system.indexes")(b.result, validate=false)(callback)
+    insert(db)("system.indexes")(b.result, validate = false)(callback)
   }
 
   def createUniqueIndex[Idx <% BSONDocument](db: String)(collection: String)(keys: Idx)(callback: WriteRequestFuture) {
@@ -354,31 +355,28 @@ abstract class MongoConnection extends Logging {
   /**
    * NOTE: If you want the "Returns Bool" version of these, use the version on Collection or DB
    */
-  def dropAllIndexes[Result : SerializableBSONObject : Manifest](db: String)(collection: String)(callback: SingleDocQueryRequestFuture[Result]) {
+  def dropAllIndexes[Result: SerializableBSONObject: Manifest](db: String)(collection: String)(callback: SingleDocQueryRequestFuture[Result]) {
     dropIndex(db)(collection)("*")(callback)
   }
 
   /**
    * NOTE: If you want the "Returns Bool" version of these, use the version on Collection or DB
    */
-  def dropIndex[Result : SerializableBSONObject : Manifest](db: String)(collection: String)(name: String)(callback: SingleDocQueryRequestFuture[Result]) {
+  def dropIndex[Result: SerializableBSONObject: Manifest](db: String)(collection: String)(name: String)(callback: SingleDocQueryRequestFuture[Result]) {
     // TODO index cache
-    runCommand(db, Document("deleteIndexes" ->  (db + "." + collection), "index" -> name))(callback)
+    runCommand(db, Document("deleteIndexes" -> (db + "." + collection), "index" -> name))(callback)
   }
-
-
 
   // TODO "Ensure" mode
   val handler: MongoConnectionHandler
 
   def connected_? = MongoConnection.channelState(channel).get()
-  def _connectedState(connected: Boolean, maxBSONObjectSize: Int) = 
+  def _connectedState(connected: Boolean, maxBSONObjectSize: Int) =
     MongoConnection.setChannelState(channel, connected, maxBSONObjectSize)
 
   val addr: InetSocketAddress
 
   protected[mongodb] var _writeConcern: WriteConcern = WriteConcern.Normal
-
 
   protected[mongodb] def shutdown() {
     log.debug("Shutting Down & Cleaning up connection handler.")
@@ -386,7 +384,6 @@ abstract class MongoConnection extends Logging {
     channel.close()
     _connectedState(false, maxBSONObjectSize)
   }
-
 
   def close() {
     log.info("Closing down connection.")
@@ -416,8 +413,6 @@ abstract class MongoConnection extends Logging {
    */
   def writeConcern = _writeConcern
 }
-
-
 
 /**
  * Factory object for creating connections
@@ -462,27 +457,61 @@ object MongoConnection extends Logging {
 
     new DirectConnection(new InetSocketAddress(hostname, port))
   }
-  
+
+  /**
+   * Connect to MongoDB using a URI format.
+   *
+   * Because we can't tell if you are giving us just a host, a DB or a collection
+   * The return type is a Triple of Connection, Option[DB], Option[Collection].
+   *
+   * You'll be given each of thes ethat could be validly built.
+   *
+   * @see http://www.mongodb.org/display/DOCS/Connections
+   */
+  def fromURI(uri: String): (MongoConnection, Option[DB], Option[Collection]) = uri match {
+    case MongoURI(hosts, db, collection, username, password, options) => {
+      require(hosts.size > 0, "No valid hosts found in parsed host list")
+      if (hosts.size == 1) {
+        val _conn = MongoConnection(hosts.head._1, hosts.head._2)
+        // TODO - Authentication!
+        val _db = db match {
+          case Some(dbName) => Some(_conn(dbName))
+          case None => None
+        }
+
+        val _coll = collection match {
+          case Some(collName) => {
+            assume(_db.isDefined, "Cannot specify a collection name with no DB Name")
+            Some(_db.get.apply(collName))
+          }
+          case None => None
+        }
+        (_conn, _db, _coll)
+      } else throw new UnsupportedOperationException("No current support for multiple hosts in this driver")
+    }
+  }
+
   /** TODO - Support timing out of ops */
   def setChannelState(channel: Channel, connected: Boolean, maxBSONObjectSize: Int) = {
     log.info("Setting a channel state up to '%s' for '%s'", connected, channel)
-    val oldState = channelState.getOrElseUpdate(channel, new AtomicBoolean(false)).getAndSet(connected) 
+    val oldState = channelState.getOrElseUpdate(channel, new AtomicBoolean(false)).getAndSet(connected)
     if (oldState) connected match {
       case true => {
-        log.info("Connection state was already connected, set to connected again.  NOOP")
+        log.trace("Connection state was already connected, set to connected again.  NOOP")
       }
       case false => {
-        log.info("Connection state was connected, set to disconnected. Otherwise, NOOP.")
+        log.trace("Connection state was connected, set to disconnected. Otherwise, NOOP.")
       }
-    } else connected match {
+    }
+    else connected match {
       case true => {
         log.info("Connection state was disconnected, set to connected.  Dequeueing any backed up operations.")
-        channelOpQueue.get(channel).foreach { queue => 
+        channelOpQueue.get(channel).foreach { queue =>
           queue.dequeueAll.foreach { op => op(maxBSONObjectSize) }
         }
       }
       case false => {
-        log.info("Connection state was disconnected, set to disconnected again.  NOOP.")
+        log.trace("Connection state was disconnected, set to disconnected again.  NOOP.")
       }
     }
   }
@@ -492,13 +521,13 @@ object MongoConnection extends Logging {
     val isWrite = f.isInstanceOf[WriteRequestFuture]
     // TODO - Better pre-estimation of buffer size - We don't have a length attributed to the Message yet
     val outStream = new ChannelBufferOutputStream(ChannelBuffers.dynamicBuffer(ByteOrder.LITTLE_ENDIAN,
-                                                  if (maxBSONObjectSize > 0) maxBSONObjectSize else 1024 * 1024 * 4))
+      if (maxBSONObjectSize > 0) maxBSONObjectSize else 1024 * 1024 * 4))
     log.trace("Put msg id: %s f: %s into dispatcher: %s", msg.requestID, f, dispatcher)
     log.trace("PreWrite with outStream '%s'", outStream)
     /**
-    * We only setup dispatchers if it is a Non-Write Request or a Write Request w/ a Write Concern that necessitates GLE
-    * The GLE / Safe write stuff is setup later
-    */
+     * We only setup dispatchers if it is a Non-Write Request or a Write Request w/ a Write Concern that necessitates GLE
+     * The GLE / Safe write stuff is setup later
+     */
     if (!isWrite) dispatcher.put(msg.requestID, CompletableRequest(msg, f))
     msg.write(outStream)
     log.debug("Writing Message '%s' out to Channel via stream '%s'.", msg, outStream)
@@ -514,9 +543,9 @@ object MongoConnection extends Logging {
           val gle = createCommand(wMsg.namespace.split("\\.")(0), Document("getlasterror" -> 1))
           log.trace("Created a GetLastError Message: %s", gle)
           /**
-          * We only setup dispatchers if it is a Non-Write Request or a Write Request w/ a Write Concern that necessitates GLE
-          * Note we dispatch the GetLastError's ID but with the write message !
-          */
+           * We only setup dispatchers if it is a Non-Write Request or a Write Request w/ a Write Concern that necessitates GLE
+           * Note we dispatch the GetLastError's ID but with the write message !
+           */
           dispatcher.put(gle.requestID, CompletableRequest(msg, f))
           gle.write(outStream)
           log.debug("Wrote a getLastError to the tail end of the output buffer.")
@@ -532,8 +561,6 @@ object MongoConnection extends Logging {
     // todo - clean this up to be more automatic like the writeCB is
 
     val exec = (_maxBSON: Int) => {
-      // TODO - Remove this debug line ;)
-      log.info("\t => Writing channel output / MaxBSON: %d", _maxBSON)
       channel.write(outStream.buffer())
       outStream.close()
       /** If no write Concern and it's a write, kick the callback now.*/
@@ -546,7 +573,6 @@ object MongoConnection extends Logging {
     } else exec(maxBSONObjectSize)
 
   }
-
 
   protected[mongodb] def createCommand[Cmd <% BSONDocument](ns: String, cmd: Cmd) = {
     log.trace("Attempting to create command '%s' on DB '%s.$cmd'", cmd, ns)

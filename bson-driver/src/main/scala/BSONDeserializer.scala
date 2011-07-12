@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -18,7 +18,7 @@
 package org.bson
 
 import BSON._
-import java.lang.String
+import org.bson.io.Bits
 import java.io._
 import org.bson.types._
 import java.util.{ UUID, Date => JDKDate }
@@ -27,9 +27,9 @@ import scala.collection.mutable.Stack
 import org.bson.collection._
 
 /**
-* Deserialization handler which is expected to turn a BSON ByteStream into
-* objects of type "T" (or a subclass thereof)
-*/
+ * Deserialization handler which is expected to turn a BSON ByteStream into
+ * objects of type "T" (or a subclass thereof)
+ */
 trait BSONDeserializer extends BSONDecoder with Logging {
   val callback: Callback //= new DefaultBSONCallback
   abstract class Callback extends BSONCallback {
@@ -82,7 +82,7 @@ trait BSONDeserializer extends BSONDecoder with Logging {
     _decode(new Input(in), callback)
   } catch {
     case ioe: IOException => {
-      log.error(ioe, "OMG! PONIES!")  
+      log.error(ioe, "OMG! PONIES!")
       throw new BSONException("Failed to decode input data.", ioe)
     }
     case t: Throwable => log.error(t, "Unexpected exception in decode"); throw t
@@ -123,9 +123,27 @@ trait BSONDeserializer extends BSONDecoder with Logging {
       val name = _in.readCStr
 
       log.trace("Element Decoding with Name '%s', Type '%s'", name, t)
-      _getHandle(t)(name)
+      decodeField(name, t)
       true
     }
+  }
+
+  /**
+   * Custom callback which allows users to custom decode/capture specific fields
+   *
+   * This is a convenient place to override if you need to handle certain fields specially...
+   */
+  protected def decodeField(name: String, t: Byte) =
+    _getHandle(t)(name)
+
+  protected def _rawObject() = {
+    val l = Array.ofDim[Byte](4)
+    _in.fill(l)
+    val len = Bits.readInt(l)
+    val b = Array.ofDim[Byte](len - 4)
+    _in.fill(b)
+    val n = Array.concat(l, b)
+    n
   }
 
   protected val _getHandle: PartialFunction[Byte, Function1[String, Unit]] = {
@@ -182,12 +200,12 @@ trait BSONDeserializer extends BSONDecoder with Logging {
       _callback.gotRegex(_: String, _in.readCStr, _in.readCStr)
     }
     case BINARY => {
-      log.info("[Get Handle] Binary value.")
+      log.debug("[Get Handle] Binary value.")
       /*_binary(_: String)*/
       val totalLen = _in.readInt
-      log.info("[Bin] Total Length: %d", totalLen)
+      log.trace("[Bin] Total Length: %d", totalLen)
       val binType = _in.read
-      log.info("[Bin] Binary Type: %s", binType)
+      log.trace("[Bin] Binary Type: %s", binType)
       val data = Array.ofDim[Byte](totalLen)
       _in.fill(data)
       _callback.gotBinary(_: String, binType, data)
@@ -358,6 +376,8 @@ class DefaultBSONDeserializer extends BSONDeserializer {
     def gotMaxKey(name: String) = cur.put(name, "MaxKey") // ??
 
     def gotMinKey(name: String) = cur.put(name, "MinKey") // ??
+
+    def gotCustomObject(name: String, value: AnyRef) = cur.put(name, value)
 
     def gotUndefined(name: String) { /* NOOP */ }
 

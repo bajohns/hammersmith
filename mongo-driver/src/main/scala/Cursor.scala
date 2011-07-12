@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -15,7 +15,6 @@
  *
  */
 package com.mongodb.async
-
 
 import org.bson.util.Logging
 import org.bson._
@@ -29,7 +28,7 @@ import com.twitter.util.CountDownLatch
 
 object Cursor extends Logging {
   trait IterState
-  case class Entry[T : SerializableBSONObject](doc: T) extends IterState
+  case class Entry[T: SerializableBSONObject](doc: T) extends IterState
   case object Empty extends IterState
   case object EOF extends IterState
   trait IterCmd
@@ -37,8 +36,7 @@ object Cursor extends Logging {
   case class Next(op: (IterState) => IterCmd) extends IterCmd
   case class NextBatch(op: (IterState) => IterCmd) extends IterCmd
 
-  def apply[T](namespace: String, reply: ReplyMessage)
-              (implicit ctx: ChannelHandlerContext, decoder: SerializableBSONObject[T]) = {
+  def apply[T](namespace: String, reply: ReplyMessage)(implicit ctx: ChannelHandlerContext, decoder: SerializableBSONObject[T]) = {
     log.info("Instantiate new Cursor[%s], on namespace: '%s', # messages: %d", decoder, namespace, reply.numReturned)
     try {
       new Cursor[T](namespace, reply)(ctx, decoder)
@@ -50,7 +48,7 @@ object Cursor extends Logging {
    * Internal helper, more or less a "default" iterator for internal usage
    * Not exposed publicly but useful as an example.
    */
-  protected[mongodb] def basicIter[T : SerializableBSONObject](cursor: Cursor[T])(f: T => Unit) = {
+  protected[mongodb] def basicIter[T: SerializableBSONObject](cursor: Cursor[T])(f: T => Unit) = {
     def next(op: Cursor.IterState): Cursor.IterCmd = op match {
       case Cursor.Entry(doc: T) => {
         f(doc)
@@ -67,7 +65,6 @@ object Cursor extends Logging {
     }
     iterate(cursor)(next)
   }
-
 
   /**
    * Helper for the Iteratee Pattern.
@@ -87,7 +84,7 @@ object Cursor extends Logging {
    *      The standard response to this should be Cursor.Done which tells the control loop to stop and shut down the Cursor.
    *      I suppose if you want to be special you could respond with something else but it probably won't work right.
    */
-  def iterate[T : SerializableBSONObject](cursor: Cursor[T])(op: (IterState) => IterCmd) {
+  def iterate[T: SerializableBSONObject](cursor: Cursor[T])(op: (IterState) => IterCmd) {
     log.trace("Iterating '%s' with op: '%s'", cursor, op)
     def next(f: (IterState) => IterCmd): Unit = op(cursor.next()) match {
       case Done => {
@@ -99,8 +96,8 @@ object Cursor extends Logging {
         next(tOp)
       }
       case NextBatch(tOp) => cursor.nextBatch(() => {
-          log.debug("Next Batch Loaded.")
-          next(tOp)
+        log.debug("Next Batch Loaded.")
+        next(tOp)
       })
     }
     next(op)
@@ -130,16 +127,17 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
    */
   protected def validCursor(id: Long) = id == 0
   protected var cursorEmpty = validCursor(cursorID)
-  @volatile protected var gettingMore = new CountDownLatch(0)
+  @volatile
+  protected var gettingMore = new CountDownLatch(0)
 
   /**
    * Mutable internally as we push further through the cursor on the server
    */
   protected var startIndex = reply.startingFrom
 
-  log.info("Decode %s docs.", reply.documents.length)
+  log.trace("Decode %s docs.", reply.documents.length)
   try {
-    val _d = Seq.newBuilder[T] 
+    val _d = Seq.newBuilder[T]
     for (doc <- reply.documents) {
       log.trace("Decoding: %s", doc)
       try {
@@ -152,7 +150,7 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
     }
     val _decoded = _d.result
     // reply.documents.map(decoder.decode)
-    log.info("Decoded %s docs: %s", _decoded.length, _decoded)
+    log.debug("Decoded %s docs: %s", _decoded.length, _decoded)
   } catch {
     case e => log.error(e, "Document decode failure: %s", e)
   }
@@ -178,12 +176,12 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
     if (gettingMore.isZero) {
       gettingMore = new CountDownLatch(1)
       assume(hasMore, "GetMore should not be invoked on an empty Cursor.")
-      log.info("Invoking getMore(); cursorID: %s, queue size: %s", cursorID, docs.size)
+      log.trace("Invoking getMore(); cursorID: %s, queue size: %s", cursorID, docs.size)
       MongoConnection.send(GetMoreMessage(namespace, batchSize, cursorID),
         RequestFutures.getMore((reply: Either[Throwable, (Long, Seq[T])]) => {
           reply match {
             case Right((id, batch)) => {
-              log.info("Got a result from 'getMore' command (id: %d).", id)
+              log.trace("Got a result from 'getMore' command (id: %d).", id)
               cursorEmpty = validCursor(id)
               docs.enqueue(batch: _*)
             }
@@ -195,31 +193,29 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
           }
           gettingMore.countDown()
           notify()
-        })
-      )
+        }))
     } else log.warn("Already gettingMore on this cursor.  May be a concurrency issue if called repeatedly.")
   }
 
   /**
    */
   def next() = try {
-    log.info("NEXT: %s ", decoder.getClass)
+    log.trace("NEXT: %s ", decoder.getClass)
     if (docs.length > 0) Cursor.Entry(docs.dequeue()) else if (hasMore) Cursor.Empty
     else
       Cursor.EOF
   } catch { // just in case
     case nse: java.util.NoSuchElementException => {
-      log.info("No Such Element Exception")
+      log.debug("No Such Element Exception")
       if (hasMore) {
-        log.info("Has More.")
+        log.debug("Has More.")
         Cursor.Empty
       } else {
-        log.info("Cursor Exhausted.")
+        log.debug("Cursor Exhausted.")
         Cursor.EOF
       }
     }
   }
-
 
   def iterate = Cursor.iterate(this) _
 
@@ -232,12 +228,12 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
    * to build your own fork first.
    */
   protected[mongodb] def foreach(f: T => Unit) = {
-    log.info("Foreach: %s | empty? %s", f, isEmpty)
+    log.trace("Foreach: %s | empty? %s", f, isEmpty)
     Cursor.basicIter(this)(f)
   }
 
   def close() {
-    log.info("Closing out cursor: %s", this)
+    log.debug("Closing out cursor: %s", this)
     /**
      * Basically if the cursorEmpty is true we can just NOOP here
      * as MongoDB automatically cleans up fully iterated cursors.
@@ -257,7 +253,7 @@ class Cursor[T](val namespace: String, protected val reply: ReplyMessage)(implic
    * Attempts to catch and close any uncleaned up cursors.
    */
   override def finalize() {
-    log.info("Finalizing Cursor (%s)", this)
+    log.debug("Finalizing Cursor (%s)", this)
     close()
     super.finalize()
   }

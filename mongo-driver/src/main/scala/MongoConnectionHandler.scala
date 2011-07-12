@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -40,12 +40,12 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
   protected val bootstrap: ClientBootstrap
   protected[mongodb] var maxBSONObjectSize = 1024 * 4 * 4 // default
 
-  protected def queryFail(reply: ReplyMessage, result: RequestFuture) = { 
+  protected def queryFail(reply: ReplyMessage, result: RequestFuture) = {
     log.trace("Query Failure")
     // Attempt to grab the $err document
     val err = reply.documents.headOption match {
       case Some(b) => {
-        val errDoc = SerializableDocument.decode(b)  // TODO - Extractors!
+        val errDoc = SerializableDocument.decode(b) // TODO - Extractors!
         log.trace("Error Document found: %s", errDoc)
         result(new Exception(errDoc.getAsOrElse[String]("$err", "Unknown Error.")))
       }
@@ -57,20 +57,19 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
     }
   }
 
-
   override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent) {
     val buf = e.getMessage.asInstanceOf[ChannelBuffer]
     log.debug("Incoming Message received on (%s) Length: %s", buf, buf.readableBytes())
     MongoMessage.unapply(new ChannelBufferInputStream(buf)) match {
       case reply: ReplyMessage => {
-        log.info("Reply Message Received: %s", reply)
+        log.debug("Reply Message Received: %s", reply)
         // Dispatch the reply, separate into requisite parts, etc
         /**
          * Note - it is entirely OK to stuff a single result into
          * a Cursor, but not multiple results into a single.  Should be obvious.
          */
         val req = MongoConnection.dispatcher.get(reply.header.responseTo)
-        log.info("[%s] Req Obj: %s", reply.header.responseTo, req)
+        log.trace("[%s] Req Obj: %s", reply.header.responseTo, req)
         /**
          * Even when no response is wanted a 'Default' callback should be regged so
          * this is definitely warnable, for now.
@@ -105,6 +104,7 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
                   cursorResult(Cursor(msg.namespace, reply)(ctx, _r.decoder).asInstanceOf[cursorResult.T]) // TODO - Fix Me!
                 }
               }
+            }
               case CompletableGetMoreRequest(msg: GetMoreMessage, getMoreResult: GetMoreRequestFuture[_]) => {
                 log.trace("Get More Request Future.")
                 if (reply.cursorNotFound) {
@@ -117,15 +117,16 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
                 }
               }
             }
+          }
           // TODO - Handle any errors in a "non completable" // TODO - Capture generated ID? the _ids thing on insert is not quite ... defined.
           case CompletableWriteRequest(msg, writeResult: WriteRequestFuture) => {
-            log.info("Write Request Future.")
+            log.trace("Write Request Future.")
             require(reply.numReturned <= 1, "Found more than 1 returned document; cannot complete a WriteRequestFuture.")
             // Check error state
             // Attempt to grab the document
             reply.documents.headOption match {
               case Some(b) => {
-                val doc = SerializableDocument.decode(b)  // TODO - Extractors!
+                val doc = SerializableDocument.decode(b) // TODO - Extractors!
                 log.debug("Document found: %s", doc)
                 val ok = boolCmdResult(doc, false)
                 // this is how the Java driver decides to throwOnError, !ok || "err"
@@ -137,12 +138,12 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
                   writeResult(new Exception(errmsg))
                 } else {
                   val w = WriteResult(ok = true,
-                                      error = None,
-                                      // FIXME is it possible to have a code but no error?
-                                      code = doc.getAs[Int]("code"),
-                                      n = doc.getAsOrElse[Int]("n", 0),
-                                      upsertID = doc.getAs[AnyRef]("upserted"),
-                                      updatedExisting = doc.getAs[Boolean]("updatedExisting"))
+                    error = None,
+                    // FIXME is it possible to have a code but no error?
+                    code = doc.getAs[Int]("code"),
+                    n = doc.getAsOrElse[Int]("n", 0),
+                    upsertID = doc.getAs[AnyRef]("upserted"),
+                    updatedExisting = doc.getAs[Boolean]("updatedExisting"))
                   log.debug("W: %s", w)
                   writeResult((None, w).asInstanceOf[writeResult.T])
                 }
@@ -154,7 +155,7 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
               }
             }
           }
-          
+
           case unknown => log.error("Unknown or unexpected value in dispatcher map: %s", unknown)
         })
       }
@@ -172,12 +173,12 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
 
   override def channelDisconnected(ctx: ChannelHandlerContext, e: ChannelStateEvent) {
     log.warn("Disconnected from '%s'", remoteAddress)
-//    shutdown()
+    //    shutdown()
   }
 
   override def channelClosed(ctx: ChannelHandlerContext, e: ChannelStateEvent) {
     log.info("Channel Closed to '%s'", remoteAddress)
-//    shutdown()
+    //    shutdown()
   }
 
   override def channelConnected(ctx: ChannelHandlerContext, e: ChannelStateEvent) {
@@ -188,7 +189,4 @@ abstract class MongoConnectionHandler extends SimpleChannelHandler with Logging 
   def remoteAddress = bootstrap.getOption("remoteAddress").asInstanceOf[InetSocketAddress]
 
 }
-
-
-
 
